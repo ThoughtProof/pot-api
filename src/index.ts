@@ -2,7 +2,7 @@
 import express from 'express';
 import { verify } from 'pot-sdk';
 import { resolveKeys, buildApiKeyRecord, validateConfig } from './config.js';
-import { createJob, getJob, updateJob } from './jobs.js';
+import { createJob, getJob, updateJob } from './queue.js';
 import type { ApiKeys } from './config.js';
 
 const app = express();
@@ -49,7 +49,7 @@ app.post('/verify', async (req, res) => {
 });
 
 // ─── Async verify ─────────────────────────────────────────
-app.post('/verify/async', (req, res) => {
+app.post('/verify/async', async (req, res) => {
   const { output, question, tier = 'basic', callbackUrl, apiKeys } = req.body as {
     output: string;
     question: string;
@@ -70,16 +70,16 @@ app.post('/verify/async', (req, res) => {
     return;
   }
 
-  const job = createJob({ output, question, tier, callbackUrl });
+  const job = await createJob({ output, question, tier, callbackUrl });
   res.status(202).json({ jobId: job.id, status: 'pending', pollUrl: `/jobs/${job.id}` });
 
-  // Run in background
+  // Run in background (no await — fire and forget)
   runJob(job.id, output, question, tier, buildApiKeyRecord(keys), callbackUrl);
 });
 
 // ─── Poll job status ───────────────────────────────────────
-app.get('/jobs/:id', (req, res) => {
-  const job = getJob(req.params.id);
+app.get('/jobs/:id', async (req, res) => {
+  const job = await getJob(req.params.id);
   if (!job) {
     res.status(404).json({ error: 'Job not found' });
     return;
@@ -96,18 +96,18 @@ async function runJob(
   apiKeys: Record<string, string>,
   callbackUrl?: string,
 ) {
-  updateJob(jobId, { status: 'running' });
+  await updateJob(jobId, { status: 'running' });
 
   try {
     const result = await verify(output, { tier, apiKeys, question });
-    updateJob(jobId, { status: 'done', result });
+    await updateJob(jobId, { status: 'done', result });
 
     if (callbackUrl) {
       await pushWebhook(callbackUrl, { jobId, status: 'done', result });
     }
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    updateJob(jobId, { status: 'error', error });
+    await updateJob(jobId, { status: 'error', error });
 
     if (callbackUrl) {
       await pushWebhook(callbackUrl, { jobId, status: 'error', error });
