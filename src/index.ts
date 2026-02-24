@@ -12,7 +12,7 @@ const PORT = parseInt(process.env.PORT ?? '3141', 10);
 
 // ─── Health ───────────────────────────────────────────────
 app.get('/', (_req, res) => {
-  res.json({ name: 'pot-api', version: '0.1.0', status: 'ok' });
+  res.json({ name: 'pot-api', version: '0.2.0', status: 'ok', queue: process.env.REDIS_URL ? 'redis' : 'memory' });
 });
 
 // ─── Sync verify ──────────────────────────────────────────
